@@ -180,6 +180,3 @@ This project is part of academic coursework at FPT University.
 - Course Instructor: Nguyen An Khuong
 - FPT University AI Department
 - Kaggle Community for dataset
-
----
-**Note:** This project emphasizes comparative analysis over raw performance metrics. Success is measured by depth of understanding and ability to articulate model trade-offs.
