@@ -76,52 +76,52 @@ REGRESSION_PARAMS = {
 # Classification hyperparameter grids
 CLASSIFICATION_PARAMS = {
     'logistic': {
-        'model__C': np.logspace(-3, 3, 7),
-        'model__solver': ['lbfgs', 'liblinear'],
-        'model__max_iter': [1000]
+        'C': np.logspace(-3, 3, 7),
+        'solver': ['lbfgs', 'liblinear'],
+        'max_iter': [1000]
     },
     
     'knn': {
-        'model__n_neighbors': [3, 5, 7, 9, 11, 15],
-        'model__weights': ['uniform', 'distance'],
-        'model__metric': ['euclidean', 'manhattan']
+        'n_neighbors': [3, 5, 7, 9, 11, 15],
+        'weights': ['uniform', 'distance'],
+        'metric': ['euclidean', 'manhattan']
     },
     
     'svm_linear': {
-        'model__C': np.logspace(-2, 2, 5)
+        'C': np.logspace(-2, 2, 5)
     },
     
     'svm_rbf': {
-        'model__C': np.logspace(-1, 3, 5),
-        'model__gamma': ['scale', 'auto'] + list(np.logspace(-3, 1, 4))
+        'C': np.logspace(-1, 3, 5),
+        'gamma': ['scale', 'auto'] + list(np.logspace(-3, 1, 4))
     },
     
     'decision_tree': {
-        'model__max_depth': [3, 5, 7, 10, None],
-        'model__min_samples_split': [2, 5, 10, 20],
-        'model__min_samples_leaf': [1, 2, 4, 8]
+        'max_depth': [3, 5, 7, 10, None],
+        'min_samples_split': [2, 5, 10, 20],
+        'min_samples_leaf': [1, 2, 4, 8]
     },
     
     'random_forest': {
-        'model__n_estimators': [50, 100, 200],
-        'model__max_depth': [5, 10, 20, None],
-        'model__min_samples_split': [2, 5, 10],
-        'model__min_samples_leaf': [1, 2, 4]
+        'n_estimators': [50, 100, 200],
+        'max_depth': [5, 10, 20, None],
+        'min_samples_split': [2, 5, 10],
+        'min_samples_leaf': [1, 2, 4]
     },
     
     'gradient_boosting': {
-        'model__n_estimators': [50, 100, 200],
-        'model__learning_rate': [0.01, 0.1, 0.3],
-        'model__max_depth': [3, 5, 7],
-        'model__subsample': [0.8, 1.0]
+        'n_estimators': [50, 100, 200],
+        'learning_rate': [0.01, 0.1, 0.3],
+        'max_depth': [3, 5, 7],
+        'subsample': [0.8, 1.0]
     },
     
     'xgboost': {
-        'model__n_estimators': [50, 100, 200],
-        'model__learning_rate': [0.01, 0.1, 0.3],
-        'model__max_depth': [3, 5, 7],
-        'model__subsample': [0.8, 1.0],
-        'model__colsample_bytree': [0.8, 1.0]
+        'n_estimators': [50, 100, 200],
+        'learning_rate': [0.01, 0.1, 0.3],
+        'max_depth': [3, 5, 7],
+        'subsample': [0.8, 1.0],
+        'colsample_bytree': [0.8, 1.0]
     }
 }
 

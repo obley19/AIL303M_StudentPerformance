@@ -1,7 +1,8 @@
 """
 Model Evaluation Module for Mini Capstone ML Project
 ====================================================
-Handles model evaluation, metrics calculation, and visualization.
+This module handles model evaluation, metrics calculation, visualization,
+and performance comparison across different model types.
 """
 
 import numpy as np
@@ -11,249 +12,437 @@ import seaborn as sns
 from sklearn.metrics import (
     # Regression metrics
     mean_squared_error, mean_absolute_error, r2_score, mean_absolute_percentage_error,
-    # Classification metrics  
+    # Classification metrics
     accuracy_score, precision_score, recall_score, f1_score, roc_auc_score,
     classification_report, confusion_matrix, roc_curve, auc,
     # Clustering metrics
     silhouette_score, davies_bouldin_score, calinski_harabasz_score
 )
-from typing import Dict, Any, Tuple, List
+from sklearn.model_selection import learning_curve
+from typing import Dict, Any, Tuple, List, Optional
+import warnings
+warnings.filterwarnings('ignore')
 
-def evaluate_regression_models(models: Dict, X_test, y_test) -> pd.DataFrame:
-    """Evaluate all regression models."""
-    results = []
+import config
+
+class ModelEvaluator:
+    """
+    Comprehensive model evaluator for regression, classification, and clustering tasks.
+    """
     
-    for name, model in models.items():
+    def __init__(self, task: str = 'classification'):
+        """
+        Initialize the ModelEvaluator.
+        
+        Parameters:
+        -----------
+        task : str
+            Type of task: 'regression', 'classification', or 'clustering'
+        """
+        self.task = task
+        self.results = {}
+        self.best_model = None
+        
+    def evaluate_regression_model(self, model, X_test, y_test, model_name: str) -> Dict:
+        """
+        Evaluate a regression model and return metrics.
+        
+        Parameters:
+        -----------
+        model : sklearn estimator
+            Trained regression model
+        X_test : array-like
+            Test features
+        y_test : array-like
+            True target values
+        model_name : str
+            Name of the model
+            
+        Returns:
+        --------
+        dict : Dictionary of evaluation metrics
+        """
         y_pred = model.predict(X_test)
         
         metrics = {
-            'Model': name,
+            'Model': model_name,
             'R2 Score': r2_score(y_test, y_pred),
             'MAE': mean_absolute_error(y_test, y_pred),
             'MSE': mean_squared_error(y_test, y_pred),
             'RMSE': np.sqrt(mean_squared_error(y_test, y_pred)),
             'MAPE': mean_absolute_percentage_error(y_test, y_pred) * 100
         }
-        results.append(metrics)
         
-        print(f"\n{name}:")
-        print(f"  R²: {metrics['R2 Score']:.4f}")
-        print(f"  RMSE: {metrics['RMSE']:.4f}")
+        self.results[model_name] = metrics
+        
+        print(f"\n📊 {model_name} Regression Metrics:")
+        print(f"   R² Score: {metrics['R2 Score']:.4f}")
+        print(f"   MAE: {metrics['MAE']:.4f}")
+        print(f"   RMSE: {metrics['RMSE']:.4f}")
+        print(f"   MAPE: {metrics['MAPE']:.2f}%")
+        
+        return metrics
     
-    return pd.DataFrame(results)
-
-def evaluate_classification_models(models: Dict, X_test, y_test) -> pd.DataFrame:
-    """Evaluate all classification models."""
-    results = []
-    
-    for name, model in models.items():
+    def evaluate_classification_model(self, model, X_test, y_test, model_name: str) -> Dict:
+        """
+        Evaluate a classification model and return metrics.
+        
+        Parameters:
+        -----------
+        model : sklearn estimator
+            Trained classification model
+        X_test : array-like
+            Test features
+        y_test : array-like
+            True labels
+        model_name : str
+            Name of the model
+            
+        Returns:
+        --------
+        dict : Dictionary of evaluation metrics
+        """
         y_pred = model.predict(X_test)
-        y_proba = model.predict_proba(X_test)[:, 1] if hasattr(model, 'predict_proba') else None
+        
+        # Get probabilities if available
+        if hasattr(model, 'predict_proba'):
+            y_proba = model.predict_proba(X_test)[:, 1]
+            roc_auc = roc_auc_score(y_test, y_proba)
+        else:
+            roc_auc = None
         
         metrics = {
-            'Model': name,
+            'Model': model_name,
             'Accuracy': accuracy_score(y_test, y_pred),
             'Precision': precision_score(y_test, y_pred, average='weighted'),
             'Recall': recall_score(y_test, y_pred, average='weighted'),
             'F1-Score': f1_score(y_test, y_pred, average='weighted'),
-            'ROC-AUC': roc_auc_score(y_test, y_proba) if y_proba is not None else 'N/A'
+            'ROC-AUC': roc_auc if roc_auc else 'N/A'
         }
-        results.append(metrics)
         
-        print(f"\n{name}:")
-        print(f"  Accuracy: {metrics['Accuracy']:.4f}")
-        print(f"  F1-Score: {metrics['F1-Score']:.4f}")
+        self.results[model_name] = metrics
+        
+        print(f"\n📊 {model_name} Classification Metrics:")
+        print(f"   Accuracy: {metrics['Accuracy']:.4f}")
+        print(f"   Precision: {metrics['Precision']:.4f}")
+        print(f"   Recall: {metrics['Recall']:.4f}")
+        print(f"   F1-Score: {metrics['F1-Score']:.4f}")
+        if roc_auc:
+            print(f"   ROC-AUC: {metrics['ROC-AUC']:.4f}")
+        
+        return metrics
     
-    return pd.DataFrame(results)
-
-def evaluate_clustering_models(models: Dict, X_scaled) -> pd.DataFrame:
-    """Evaluate all clustering models."""
-    results = []
-    
-    for name, model in models.items():
-        if name == 'PCA':
-            continue  # Skip PCA as it's not a clustering model
+    def evaluate_clustering_model(self, model, X, model_name: str) -> Dict:
+        """
+        Evaluate a clustering model and return metrics.
+        
+        Parameters:
+        -----------
+        model : sklearn estimator
+            Trained clustering model
+        X : array-like
+            Features used for clustering
+        model_name : str
+            Name of the model
             
-        # Get labels
+        Returns:
+        --------
+        dict : Dictionary of evaluation metrics
+        """
+        # Get cluster labels
         if hasattr(model, 'labels_'):
             labels = model.labels_
         else:
-            labels = model.fit_predict(X_scaled)
+            labels = model.fit_predict(X)
         
-        # Check if valid clusters
+        # Check if we have valid clusters (at least 2 clusters and not all noise)
         n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
         
-        if n_clusters >= 2:
-            metrics = {
-                'Model': name,
-                'N_Clusters': n_clusters,
-                'Silhouette Score': silhouette_score(X_scaled, labels),
-                'Davies-Bouldin Score': davies_bouldin_score(X_scaled, labels),
-                'Calinski-Harabasz Score': calinski_harabasz_score(X_scaled, labels)
-            }
-        else:
-            metrics = {
-                'Model': name,
-                'N_Clusters': n_clusters,
-                'Silhouette Score': 'N/A',
-                'Davies-Bouldin Score': 'N/A',
-                'Calinski-Harabasz Score': 'N/A'
-            }
+        metrics = {'Model': model_name}
         
-        results.append(metrics)
-        print(f"\n{name}:")
-        print(f"  Clusters: {n_clusters}")
+        if n_clusters >= 2 and len(set(labels)) >= 2:
+            metrics['Silhouette Score'] = silhouette_score(X, labels)
+            metrics['Davies-Bouldin Score'] = davies_bouldin_score(X, labels)
+            metrics['Calinski-Harabasz Score'] = calinski_harabasz_score(X, labels)
+            metrics['N_Clusters'] = n_clusters
+        else:
+            metrics['Silhouette Score'] = 'N/A'
+            metrics['Davies-Bouldin Score'] = 'N/A'
+            metrics['Calinski-Harabasz Score'] = 'N/A'
+            metrics['N_Clusters'] = n_clusters
+        
+        self.results[model_name] = metrics
+        
+        print(f"\n📊 {model_name} Clustering Metrics:")
+        print(f"   Number of clusters: {n_clusters}")
         if metrics['Silhouette Score'] != 'N/A':
-            print(f"  Silhouette: {metrics['Silhouette Score']:.4f}")
+            print(f"   Silhouette Score: {metrics['Silhouette Score']:.4f}")
+            print(f"   Davies-Bouldin Score: {metrics['Davies-Bouldin Score']:.4f}")
+            print(f"   Calinski-Harabasz Score: {metrics['Calinski-Harabasz Score']:.4f}")
+        
+        return metrics
     
-    return pd.DataFrame(results)
-
-def plot_confusion_matrices(models: Dict, X_test, y_test, figsize=(15, 10)):
-    """Plot confusion matrices for classification models."""
-    n_models = len(models)
-    n_cols = min(3, n_models)
-    n_rows = (n_models + n_cols - 1) // n_cols
-    
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
-    axes = axes.flatten() if n_models > 1 else [axes]
-    
-    for idx, (name, model) in enumerate(models.items()):
-        ax = axes[idx]
+    def plot_confusion_matrix(self, model, X_test, y_test, model_name: str):
+        """
+        Plot confusion matrix for classification models.
+        """
         y_pred = model.predict(X_test)
         cm = confusion_matrix(y_test, y_pred)
         
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax,
-                   xticklabels=['No Prep', 'Completed'],
-                   yticklabels=['No Prep', 'Completed'])
-        ax.set_title(f'{name}')
-        ax.set_ylabel('True')
-        ax.set_xlabel('Predicted')
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', cbar=False,
+                   xticklabels=['Class 0', 'Class 1'],
+                   yticklabels=['Class 0', 'Class 1'])
+        plt.title(f'Confusion Matrix - {model_name}')
+        plt.ylabel('True Label')
+        plt.xlabel('Predicted Label')
+        plt.tight_layout()
+        plt.show()
     
-    # Hide unused subplots
-    for idx in range(n_models, len(axes)):
-        axes[idx].set_visible(False)
+    def plot_roc_curves(self, models: Dict, X_test, y_test):
+        """
+        Plot ROC curves for multiple classification models.
+        """
+        plt.figure(figsize=(10, 8))
+        
+        for name, model in models.items():
+            if hasattr(model, 'predict_proba'):
+                y_proba = model.predict_proba(X_test)[:, 1]
+                fpr, tpr, _ = roc_curve(y_test, y_proba)
+                roc_auc = auc(fpr, tpr)
+                plt.plot(fpr, tpr, label=f'{name} (AUC = {roc_auc:.3f})')
+        
+        plt.plot([0, 1], [0, 1], 'k--', label='Random Classifier')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('ROC Curves Comparison')
+        plt.legend(loc='lower right')
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.show()
     
-    plt.suptitle('Confusion Matrices - Classification Models', fontsize=14, fontweight='bold')
-    plt.tight_layout()
-    plt.show()
-
-def plot_roc_curves(models: Dict, X_test, y_test):
-    """Plot ROC curves for classification models."""
-    plt.figure(figsize=(10, 8))
-    
-    for name, model in models.items():
-        if hasattr(model, 'predict_proba'):
-            y_proba = model.predict_proba(X_test)[:, 1]
-            fpr, tpr, _ = roc_curve(y_test, y_proba)
-            roc_auc = auc(fpr, tpr)
-            plt.plot(fpr, tpr, label=f'{name} (AUC = {roc_auc:.3f})')
-    
-    plt.plot([0, 1], [0, 1], 'k--', label='Random')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('ROC Curves Comparison')
-    plt.legend(loc='lower right')
-    plt.grid(True, alpha=0.3)
-    plt.show()
-
-def plot_residuals(models: Dict, X_test, y_test, figsize=(15, 10)):
-    """Plot residuals for regression models."""
-    n_models = len(models)
-    fig, axes = plt.subplots(2, n_models, figsize=figsize)
-    
-    for idx, (name, model) in enumerate(models.items()):
+    def plot_residuals(self, model, X_test, y_test, model_name: str):
+        """
+        Plot residuals for regression models.
+        """
         y_pred = model.predict(X_test)
         residuals = y_test - y_pred
         
-        # Residuals vs Fitted
-        axes[0, idx].scatter(y_pred, residuals, alpha=0.6)
-        axes[0, idx].axhline(y=0, color='r', linestyle='--')
-        axes[0, idx].set_xlabel('Fitted Values')
-        axes[0, idx].set_ylabel('Residuals')
-        axes[0, idx].set_title(f'{name}')
-        axes[0, idx].grid(True, alpha=0.3)
+        fig, axes = plt.subplots(1, 2, figsize=(14, 6))
         
-        # Distribution of residuals
-        axes[1, idx].hist(residuals, bins=30, edgecolor='black', alpha=0.7)
-        axes[1, idx].set_xlabel('Residuals')
-        axes[1, idx].set_ylabel('Frequency')
-        axes[1, idx].grid(True, alpha=0.3)
-    
-    plt.suptitle('Residual Analysis - Regression Models', fontsize=14, fontweight='bold')
-    plt.tight_layout()
-    plt.show()
-
-def plot_cluster_comparison(X_scaled, models: Dict):
-    """Visualize clustering results using PCA."""
-    from sklearn.decomposition import PCA
-    
-    # Reduce to 2D
-    pca = PCA(n_components=2, random_state=42)
-    X_pca = pca.fit_transform(X_scaled)
-    
-    # Count valid clustering models
-    cluster_models = {k: v for k, v in models.items() if k != 'PCA'}
-    n_models = len(cluster_models)
-    
-    n_cols = min(3, n_models)
-    n_rows = (n_models + n_cols - 1) // n_cols
-    
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, 5*n_rows))
-    axes = axes.flatten() if n_models > 1 else [axes]
-    
-    for idx, (name, model) in enumerate(cluster_models.items()):
-        ax = axes[idx]
+        # Residuals vs Fitted Values
+        axes[0].scatter(y_pred, residuals, alpha=0.6)
+        axes[0].axhline(y=0, color='r', linestyle='--')
+        axes[0].set_xlabel('Fitted Values')
+        axes[0].set_ylabel('Residuals')
+        axes[0].set_title(f'Residuals vs Fitted - {model_name}')
+        axes[0].grid(True, alpha=0.3)
         
-        # Get labels
-        if hasattr(model, 'labels_'):
-            labels = model.labels_
-        else:
-            labels = model.fit_predict(X_scaled)
+        # Histogram of residuals
+        axes[1].hist(residuals, bins=30, edgecolor='black', alpha=0.7)
+        axes[1].set_xlabel('Residuals')
+        axes[1].set_ylabel('Frequency')
+        axes[1].set_title(f'Distribution of Residuals - {model_name}')
+        axes[1].grid(True, alpha=0.3)
         
-        scatter = ax.scatter(X_pca[:, 0], X_pca[:, 1], c=labels, 
-                           cmap='viridis', alpha=0.6, edgecolors='black', linewidth=0.5)
-        ax.set_xlabel(f'PC1 ({pca.explained_variance_ratio_[0]:.2%})')
-        ax.set_ylabel(f'PC2 ({pca.explained_variance_ratio_[1]:.2%})')
-        ax.set_title(name)
-        ax.grid(True, alpha=0.3)
-        plt.colorbar(scatter, ax=ax)
+        plt.tight_layout()
+        plt.show()
     
-    # Hide unused
-    for idx in range(n_models, len(axes)):
-        axes[idx].set_visible(False)
+    def plot_cluster_visualization(self, X, labels, model_name: str):
+        """
+        Visualize clusters using PCA for dimensionality reduction.
+        """
+        from sklearn.decomposition import PCA
+        
+        # Reduce to 2D for visualization
+        pca = PCA(n_components=2, random_state=42)
+        X_pca = pca.fit_transform(X)
+        
+        plt.figure(figsize=(10, 8))
+        scatter = plt.scatter(X_pca[:, 0], X_pca[:, 1], 
+                            c=labels, cmap='viridis', 
+                            alpha=0.6, edgecolors='black', linewidth=0.5)
+        plt.colorbar(scatter)
+        plt.xlabel(f'First PC ({pca.explained_variance_ratio_[0]:.2%} variance)')
+        plt.ylabel(f'Second PC ({pca.explained_variance_ratio_[1]:.2%} variance)')
+        plt.title(f'Cluster Visualization - {model_name}')
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.show()
     
-    plt.suptitle('Clustering Results Visualization (PCA)', fontsize=14, fontweight='bold')
-    plt.tight_layout()
-    plt.show()
+    def plot_learning_curves(self, model, X_train, y_train, cv=5):
+        """
+        Plot learning curves for a model.
+        """
+        train_sizes, train_scores, val_scores = learning_curve(
+            model, X_train, y_train, cv=cv,
+            train_sizes=np.linspace(0.1, 1.0, 10),
+            scoring='neg_mean_squared_error' if self.task == 'regression' else 'f1',
+            n_jobs=-1
+        )
+        
+        train_scores_mean = -np.mean(train_scores, axis=1) if self.task == 'regression' else np.mean(train_scores, axis=1)
+        train_scores_std = np.std(train_scores, axis=1)
+        val_scores_mean = -np.mean(val_scores, axis=1) if self.task == 'regression' else np.mean(val_scores, axis=1)
+        val_scores_std = np.std(val_scores, axis=1)
+        
+        plt.figure(figsize=(10, 6))
+        plt.plot(train_sizes, train_scores_mean, 'o-', color='b', label='Training score')
+        plt.plot(train_sizes, val_scores_mean, 'o-', color='g', label='Cross-validation score')
+        
+        plt.fill_between(train_sizes, 
+                        train_scores_mean - train_scores_std,
+                        train_scores_mean + train_scores_std, 
+                        alpha=0.1, color='b')
+        plt.fill_between(train_sizes, 
+                        val_scores_mean - val_scores_std,
+                        val_scores_mean + val_scores_std, 
+                        alpha=0.1, color='g')
+        
+        plt.xlabel('Training Set Size')
+        plt.ylabel('Score')
+        plt.title('Learning Curves')
+        plt.legend(loc='best')
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.show()
+    
+    def compare_models(self, models: Dict, X_test, y_test) -> pd.DataFrame:
+        """
+        Compare multiple models and return comparison DataFrame.
+        
+        Parameters:
+        -----------
+        models : dict
+            Dictionary of trained models {name: model}
+        X_test : array-like
+            Test features
+        y_test : array-like
+            Test labels/values
+            
+        Returns:
+        --------
+        pd.DataFrame : Comparison of all models
+        """
+        results_list = []
+        
+        for name, model in models.items():
+            if self.task == 'regression':
+                metrics = self.evaluate_regression_model(model, X_test, y_test, name)
+            elif self.task == 'classification':
+                metrics = self.evaluate_classification_model(model, X_test, y_test, name)
+            else:  # clustering
+                metrics = self.evaluate_clustering_model(model, X_test, name)
+            
+            results_list.append(metrics)
+        
+        comparison_df = pd.DataFrame(results_list)
+        
+        # Identify best model
+        if self.task == 'regression':
+            self.best_model = comparison_df.loc[comparison_df['R2 Score'].idxmax(), 'Model']
+        elif self.task == 'classification':
+            self.best_model = comparison_df.loc[comparison_df['F1-Score'].idxmax(), 'Model']
+        else:  # clustering
+            valid_scores = comparison_df[comparison_df['Silhouette Score'] != 'N/A']
+            if not valid_scores.empty:
+                self.best_model = valid_scores.loc[valid_scores['Silhouette Score'].idxmax(), 'Model']
+        
+        print("\n" + "="*80)
+        print("MODEL COMPARISON SUMMARY")
+        print("="*80)
+        print(comparison_df.to_string())
+        
+        if self.best_model:
+            print(f"\n🏆 Best Model: {self.best_model}")
+        
+        return comparison_df
+    
+    def plot_model_comparison(self, comparison_df: pd.DataFrame):
+        """
+        Visualize model comparison results.
+        """
+        if self.task == 'regression':
+            metrics_to_plot = ['R2 Score', 'RMSE', 'MAE']
+        elif self.task == 'classification':
+            metrics_to_plot = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
+        else:  # clustering
+            metrics_to_plot = ['Silhouette Score', 'Davies-Bouldin Score']
+        
+        # Filter available metrics
+        metrics_to_plot = [m for m in metrics_to_plot if m in comparison_df.columns]
+        
+        n_metrics = len(metrics_to_plot)
+        fig, axes = plt.subplots(1, n_metrics, figsize=(5*n_metrics, 6))
+        
+        if n_metrics == 1:
+            axes = [axes]
+        
+        for idx, metric in enumerate(metrics_to_plot):
+            # Filter out N/A values for clustering
+            plot_df = comparison_df[comparison_df[metric] != 'N/A'] if metric in comparison_df.columns else comparison_df
+            
+            if not plot_df.empty:
+                ax = axes[idx]
+                bars = ax.bar(range(len(plot_df)), plot_df[metric])
+                
+                # Color best model differently
+                if self.best_model:
+                    best_idx = plot_df[plot_df['Model'] == self.best_model].index[0]
+                    bars[best_idx].set_color('green')
+                
+                ax.set_xticks(range(len(plot_df)))
+                ax.set_xticklabels(plot_df['Model'], rotation=45, ha='right')
+                ax.set_ylabel(metric)
+                ax.set_title(f'{metric} Comparison')
+                ax.grid(True, alpha=0.3)
+        
+        plt.suptitle(f'{self.task.capitalize()} Models Comparison', fontsize=16)
+        plt.tight_layout()
+        plt.show()
+    
+    def generate_report(self, comparison_df: pd.DataFrame, save_path: str = None) -> str:
+        """
+        Generate a comprehensive evaluation report.
+        """
+        report = []
+        report.append("="*80)
+        report.append(f"MODEL EVALUATION REPORT - {self.task.upper()}")
+        report.append("="*80)
+        report.append("")
+        
+        # Summary statistics
+        report.append("SUMMARY STATISTICS:")
+        report.append("-"*40)
+        report.append(comparison_df.to_string())
+        report.append("")
+        
+        # Best model analysis
+        if self.best_model:
+            report.append("BEST MODEL ANALYSIS:")
+            report.append("-"*40)
+            report.append(f"Best performing model: {self.best_model}")
+            
+            best_metrics = comparison_df[comparison_df['Model'] == self.best_model].iloc[0]
+            for metric, value in best_metrics.items():
+                if metric != 'Model':
+                    report.append(f"  - {metric}: {value}")
+        
+        report_text = "\n".join(report)
+        
+        if save_path:
+            with open(save_path, 'w') as f:
+                f.write(report_text)
+            print(f"✅ Report saved to {save_path}")
+        
+        return report_text
 
-def compare_models_barplot(df_results: pd.DataFrame, metric: str, title: str):
-    """Create bar plot comparing models on a specific metric."""
-    plt.figure(figsize=(12, 6))
-    
-    # Sort by metric
-    df_sorted = df_results.sort_values(metric, ascending=False)
-    
-    # Create bar plot
-    bars = plt.bar(range(len(df_sorted)), df_sorted[metric])
-    
-    # Highlight best model
-    bars[0].set_color('green')
-    
-    plt.xticks(range(len(df_sorted)), df_sorted['Model'], rotation=45, ha='right')
-    plt.ylabel(metric)
-    plt.title(title)
-    plt.grid(True, alpha=0.3, axis='y')
-    plt.tight_layout()
-    plt.show()
 
-def print_classification_report_all(models: Dict, X_test, y_test):
-    """Print detailed classification reports for all models."""
-    for name, model in models.items():
-        print(f"\n{'='*60}")
-        print(f"Classification Report: {name}")
-        print('='*60)
-        y_pred = model.predict(X_test)
-        print(classification_report(y_test, y_pred, 
-                                   target_names=['No Prep Course', 'Completed Prep Course']))
+def create_comparison_table(results: Dict[str, Dict]) -> pd.DataFrame:
+    """
+    Create a formatted comparison table from results dictionary.
+    """
+    df = pd.DataFrame(results).T
+    return df.round(4)
